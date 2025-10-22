@@ -1,21 +1,15 @@
--- server/server.lua (CÓDIGO COMPLETO FINAL - ESX_GOGGLES con FACCIONES ÉLITE)
-
 local ESX = nil
 
-TriggerEvent('esx:getExtendedServer', function(obj) ESX = obj end)
+TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
 
--- Callback para que el cliente pueda verificar si el trabajo del jugador tiene permiso para USAR las gafas.
--- Esta función es clave para restringir el uso a facciones de élite (legales o criminales).
+-- Callback principal para verificar permisos de facción
 ESX.RegisterServerCallback('esx_goggles:server:canPlayerUseGoggles', function(source, cb)
     local xPlayer = ESX.GetPlayerFromId(source)
     local canUse = false
 
-    -- Usamos la lista de facciones autorizadas
     if #Config.AllowedFactions == 0 then
-        -- 1. Si la lista está vacía, cualquiera puede usarlas.
         canUse = true
     else
-        -- 2. Comprobamos si el job del jugador está en la lista de facciones autorizadas.
         for _, factionName in ipairs(Config.AllowedFactions) do
             if xPlayer.job.name == factionName then
                 canUse = true
@@ -27,9 +21,45 @@ ESX.RegisterServerCallback('esx_goggles:server:canPlayerUseGoggles', function(so
     cb(canUse) 
 end)
 
--- Evento para limpiar el estado si el jugador se desconecta con las gafas puestas (Placeholder/Seguridad)
-RegisterNetEvent('esx_goggles:server:playerDisconnectedWithGoggles')
-AddEventHandler('esx_goggles:server:playerDisconnectedWithGoggles', function()
-    -- Lógica de limpieza o registro si se necesita en el futuro.
+-- Nuevo Callback para verificar acceso a modos avanzados
+ESX.RegisterServerCallback('esx_goggles:server:hasAdvancedAccess', function(source, cb, mode)
+    local xPlayer = ESX.GetPlayerFromId(source)
+    local hasAccess = IsPlayerInAllowedFaction(xPlayer)
+    
+    -- Verificaciones adicionales por modo si es necesario
+    if mode == 'ST' then -- Modo Stealth solo para rangos altos
+        hasAccess = hasAccess and HasHighRank(xPlayer)
+    end
+    
+    cb(hasAccess)
 end)
 
+-- Funciones auxiliares
+function IsPlayerInAllowedFaction(xPlayer)
+    if #Config.AllowedFactions == 0 then
+        return true
+    end
+    
+    for _, factionName in ipairs(Config.AllowedFactions) do
+        if xPlayer.job.name == factionName then
+            return true
+        end
+    end
+    return false
+end
+
+function HasHighRank(xPlayer)
+    local highRanks = {'boss', 'lieutenant', 'captain', 'chief', 'leader'}
+    for _, rank in ipairs(highRanks) do
+        if xPlayer.job.grade_name == rank then
+            return true
+        end
+    end
+    return false
+end
+
+-- Evento para limpieza de desconexiones
+RegisterNetEvent('esx_goggles:server:playerDisconnectedWithGoggles')
+AddEventHandler('esx_goggles:server:playerDisconnectedWithGoggles', function()
+    -- Lógica de limpieza si se necesita
+end)
