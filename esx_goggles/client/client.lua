@@ -1,32 +1,30 @@
--- client/client.lua (CÓDIGO COMPLETO FINAL - ESX_GOGGLES con FACCIONES ÉLITE)
-
 local ESX = nil
 local isNightVisionActive = false
 local isThermalVisionActive = false
-local isGogglesActive = false     -- Estado general de las gafas encendidas
-local currentMode = 'NV'          -- Modo actual por defecto ('NV' o 'TV')
-local isBusy = false              -- Flag para evitar spamming
-local playerCanUseGoggles = false -- Permiso de trabajo/job (viene del servidor)
+local isGogglesActive = false
+local currentMode = 'NV'
+local currentModeIndex = 1
+local isBusy = false
+local playerCanUseGoggles = false
 
+-- Inicialización
 Citizen.CreateThread(function()
     while ESX == nil do
-        TriggerEvent('esx:getExtendedClient', function(obj) ESX = obj end)
+        TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
         Citizen.Wait(0)
     end
     
-    -- 1. Verificar el permiso de trabajo/job inicial
     ESX.TriggerServerCallback('esx_goggles:server:canPlayerUseGoggles', function(canUse)
         playerCanUseGoggles = canUse
     end)
 end)
 
--- 2. Actualizar el permiso si el trabajo del jugador cambia
+-- Actualizar permisos cuando cambia el trabajo
 RegisterNetEvent('esx:setJob')
 AddEventHandler('esx:setJob', function(job)
     ESX.TriggerServerCallback('esx_goggles:server:canPlayerUseGoggles', function(canUse)
         playerCanUseGoggles = canUse
         
-        -- Si el jugador pierde el permiso (ej. es despedido o cambia de job) y las tiene activas, las apagamos.
         if not playerCanUseGoggles and isGogglesActive then
             TurnOffGoggles()
             ESX.ShowNotification('Has perdido el permiso para usar las gafas. Apagando.', Config.Color)
@@ -34,7 +32,7 @@ AddEventHandler('esx:setJob', function(job)
     end)
 end)
 
--- Función para comprobar si el jugador tiene el objeto de las gafas
+-- Función para verificar posesión del ítem
 local function HasGogglesItem()
     local xPlayer = ESX.GetPlayerData()
     if xPlayer and xPlayer.inventory then
@@ -48,44 +46,80 @@ local function HasGogglesItem()
     return false
 end
 
--- Función para aplicar un modo específico (NV o TV)
-local function ApplyMode(mode)
+-- Función mejorada para aplicar modos
+local function ApplyMode(modeKey)
+    local mode = Config.VisionModes[modeKey]
+    if not mode then return end
+
+    -- Verificar acceso para modos avanzados
+    if modeKey == 'AR' or modeKey == 'ST' then
+        ESX.TriggerServerCallback('esx_goggles:server:hasAdvancedAccess', function(hasAccess)
+            if not hasAccess then
+                ESX.ShowNotification('No tienes acceso a este modo táctico.', 'error')
+                return
+            end
+            ActuallyApplyMode(modeKey, mode)
+        end, modeKey)
+    else
+        ActuallyApplyMode(modeKey, mode)
+    end
+end
+
+-- Función que aplica físicamente el modo
+local function ActuallyApplyMode(modeKey, mode)
+    -- Limpiar efectos anteriores
     StopScreenEffect('ChopVision')
-    StopScreenEffect('ThermalVision')
+    StopScreenEffect('ThermalVision') 
+    StopScreenEffect('FocusIn')
     SetNightvision(false)
     SetThermalVision(false)
 
-    isNightVisionActive = false
-    isThermalVisionActive = false
-
-    if mode == 'NV' then
-        StartScreenEffect('ChopVision', 0, true) 
-        SetNightvision(true)
-        isNightVisionActive = true
-        currentMode = 'NV'
-        ESX.ShowNotification('Visión Nocturna ~g~ACTIVADA~s~. (Cambiar con Tecla J)', Config.Color)
-    elseif mode == 'TV' then
-        StartScreenEffect('ThermalVision', 0, true) 
-        SetThermalVision(true)
-        isThermalVisionActive = true
-        currentMode = 'TV'
-        ESX.ShowNotification('Visión Térmica ~g~ACTIVADA~s~. (Cambiar con Tecla J)', Config.Color)
+    -- Aplicar nuevo modo
+    if mode.effect then
+        StartScreenEffect(mode.effect, 0, true)
     end
+    SetNightvision(mode.setNightvision or false)
+    SetThermalVision(mode.setThermalVision or false)
+
+    -- Actualizar estado
+    isNightVisionActive = mode.setNightvision
+    isThermalVisionActive = mode.setThermalVision
+    currentMode = modeKey
+
+    -- Efectos especiales por modo
+    if mode.reduceFootprint then
+        SetPlayerTargetingMode(3)
+        SetPlayerCanDoDriveBy(PlayerId(), false)
+    else
+        SetPlayerTargetingMode(0)
+        SetPlayerCanDoDriveBy(PlayerId(), true)
+    end
+
+    -- Activar comunicaciones tácticas si están configuradas
+    if Config.TacticalComms.enabled and isGogglesActive then
+        ESX.ShowNotification('Comms Tácticas - Canal ' .. Config.TacticalComms.radioChannel, Config.Color)
+    end
+
+    ESX.ShowNotification('HMD: ' .. mode.label .. ' ~g~ACTIVADO~s~', Config.Color)
 end
 
 -- Función para apagar completamente las gafas
 local function TurnOffGoggles()
     StopScreenEffect('ChopVision')
     StopScreenEffect('ThermalVision')
+    StopScreenEffect('FocusIn')
     SetNightvision(false)
     SetThermalVision(false)
+    SetPlayerTargetingMode(0)
+    SetPlayerCanDoDriveBy(PlayerId(), true)
+    
     isNightVisionActive = false
     isThermalVisionActive = false
     isGogglesActive = false
-    ESX.ShowNotification('Gafas ~r~DESACTIVADAS~s~.', Config.Color)
+    ESX.ShowNotification('Sistema HMD ~r~DESACTIVADO~s~.', Config.Color)
 end
 
--- BUCLE 1: Detección de la tecla de Activación/Desactivación (Config.ToggleKey - Tecla N/H)
+-- BUCLE 1: Activación/Desactivación (Tecla Z)
 Citizen.CreateThread(function()
     while true do
         Citizen.Wait(5)
@@ -96,21 +130,20 @@ Citizen.CreateThread(function()
             else
                 isBusy = true
                 
-                -- 1. Verificar Permiso de Trabajo (Policía, Cártel, Mafia, etc.)
                 if not playerCanUseGoggles then
-                    ESX.ShowNotification('Tu facción no te permite usar estas gafas.', Config.Color)
-                -- 2. Verificar Objeto en Inventario
-                elseif HasGogglesItem() then
+                    ESX.ShowNotification('Tu facción no te permite usar el HMD Táctico.', 'error')
+                elseif not HasGogglesItem() then
+                    ESX.ShowNotification('No tienes el equipo táctico requerido.', 'error')
+                else
                     if not isGogglesActive then
-                        -- Encender
+                        -- Encender sistema
                         isGogglesActive = true
-                        ApplyMode(currentMode)
+                        currentModeIndex = 1
+                        ApplyMode(Config.ModeCycle[currentModeIndex])
                     else
-                        -- Apagar
+                        -- Apagar sistema
                         TurnOffGoggles()
                     end
-                else
-                    ESX.ShowNotification('No tienes el objeto "' .. Config.GogglesItemName .. '" para usar esta función.', Config.Color)
                 end
                 
                 Citizen.Wait(Config.Timeout)
@@ -120,10 +153,9 @@ Citizen.CreateThread(function()
     end
 end)
 
--- BUCLE 2: Detección de la tecla para cambiar de modo (Config.ChangeModeKey - Tecla J)
+-- BUCLE 2: Cambio de Modos (Tecla J)
 Citizen.CreateThread(function()
     while true do
-        -- Solo revisar si las gafas están activas
         if isGogglesActive then
             Citizen.Wait(5)
 
@@ -132,11 +164,11 @@ Citizen.CreateThread(function()
                     Citizen.Wait(Config.Timeout)
                 else
                     isBusy = true
-                    if currentMode == 'NV' then
-                        ApplyMode('TV')
-                    else
-                        ApplyMode('NV')
-                    end
+                    
+                    -- Ciclar al siguiente modo
+                    currentModeIndex = (currentModeIndex % #Config.ModeCycle) + 1
+                    ApplyMode(Config.ModeCycle[currentModeIndex])
+                    
                     Citizen.Wait(Config.Timeout)
                     isBusy = false
                 end
@@ -147,8 +179,31 @@ Citizen.CreateThread(function()
     end
 end)
 
+-- BUCLE 3: HUD Táctico (Información en pantalla)
+Citizen.CreateThread(function()
+    while true do
+        if isGogglesActive then
+            local mode = Config.VisionModes[currentMode]
+            if mode then
+                -- Mostrar información del HMD
+                SetTextFont(0)
+                SetTextScale(0.4, 0.4)
+                SetTextColour(255, 255, 255, 255)
+                SetTextEntry("STRING")
+                AddTextComponentString("🛡️ HMD TÁCTICO | " .. mode.label)
+                DrawText(0.005, 0.011)
+                
+                -- Mostrar teclas de control
+                SetTextEntry("STRING")
+                AddTextComponentString("~INPUT_VEH_HEADLIGHT~ Encender/Apagar | ~INPUT_VEH_HORN~ Cambiar Modo")
+                DrawText(0.005, 0.035)
+            end
+        end
+        Citizen.Wait(0)
+    end
+end)
 
--- Evento para resetear los efectos si el script se detiene o el jugador se desconecta
+-- Limpieza al detener el recurso
 AddEventHandler('onResourceStop', function(resourceName)
     if (GetCurrentResourceName() ~= resourceName) then return end
     if isGogglesActive then
@@ -156,4 +211,3 @@ AddEventHandler('onResourceStop', function(resourceName)
         TriggerServerEvent('esx_goggles:server:playerDisconnectedWithGoggles') 
     end
 end)
-
