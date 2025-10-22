@@ -1,22 +1,25 @@
 fx_version 'cerulean'
-games { 'gta5' }
+game 'gta5'
 
-name 'ESX Goggles (Night/Thermal Vision)'
-author 'IA Assistant'
-description 'Sistema de Gafas con Visión Nocturna y Térmica, restringido por Facciones (Job).'
+name 'esx_goggles'
+author 'YourName'
+description 'Advanced Tactical HMD System for ESX'
+version '2.0.0'
+license 'MIT'
 
-shared_scripts {
-    '@es_extended/imports.lua',
-    '@es_extended/config.lua',
-    'config.lua'
-}
+shared_script '@es_extended/imports.lua'
+shared_script 'config.lua'
 
 client_scripts {
-    '@es_extended/client/main.lua',
+    '@es_extended/client/common.lua',
     'client/client.lua'
 }
 
 server_scripts {
-    '@es_extended/server/main.lua',
+    '@es_extended/server/common.lua',
     'server/server.lua'
+}
+
+dependencies {
+    'es_extended'
 }
