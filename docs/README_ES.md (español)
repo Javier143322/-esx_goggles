@@ -1,0 +1,22 @@
+# ESX Goggles - Sistema Táctico HMD Avanzado
+
+Sistema avanzado de gafas tácticas con múltiples modos de visión para servidores de Roleplay de GTA V.
+
+## Características
+- 🎯 4 Modos de Visión: Nocturna, Térmica, Realidad Aumentada, Sigilo
+- 🛡️ Control de acceso por facciones
+- 📡 Comunicaciones tácticas integradas
+- 🎮 Ciclado inteligente entre modos
+- 👁️ Pantalla HUD en tiempo real
+
+## Instalación
+1. Descargar y colocar en tu directorio `resources`
+2. Añadir `start esx_goggles` en tu server.cfg
+3. Asegurar que el ítem `nightvision_goggles` exista en tu base de datos
+
+## Controles
+- `Z` - Encender/Apagar Gafas
+- `J` - Cambiar entre modos de visión
+
+## Soporte
+Para soporte, por favor abre un issue en GitHub.
